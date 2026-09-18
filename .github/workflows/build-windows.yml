@@ -36,6 +36,7 @@ jobs:
             --windowed `
             --add-data "README.txt:." `
             --collect-data=pykakasi `
+            --collect-data=ytmusicapi `
             spotdl_gui_main.py
       
       - name: Create portable package
