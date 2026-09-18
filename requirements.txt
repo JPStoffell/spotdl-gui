@@ -1,0 +1,9 @@
+PyQt6==6.7.0
+PyQt6-Qt6==6.7.0
+PyQt6-sip==13.8.0
+spotdl==4.4.16
+yt-dlp==2024.1.1
+beautifulsoup4==4.12.2
+Pillow==10.1.0
+requests==2.31.0
+pyinstaller==6.3.0
