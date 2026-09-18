@@ -29,63 +29,90 @@ except ImportError:
     sys.exit(1)
 
 
+# Spotdl's SpotifyClient is a process-wide singleton (SpotifyClient.init()
+# raises if called twice), so the Spotdl instance must be created once and
+# reused across downloads rather than rebuilt on every DownloadWorker.
+_spotdl_instance = None
+
+
+def get_spotdl(cache_path):
+    """Get (creating on first use) the shared Spotdl instance"""
+    global _spotdl_instance
+    if _spotdl_instance is None:
+        _spotdl_instance = Spotdl(
+            client_id="",
+            client_secret="",
+            user_auth=False,
+            cache_path=cache_path,
+            downloader_settings={"simple_tui": True},
+        )
+    return _spotdl_instance
+
+
 class DownloadWorker(QThread):
     """Worker thread for downloads to keep UI responsive"""
     progress = pyqtSignal(str)  # Log message
     progress_bar = pyqtSignal(int)  # Progress percentage
     finished = pyqtSignal(bool)  # Success/failure
     status_update = pyqtSignal(str)  # Current status
-    
+
     def __init__(self, urls, output_path, settings):
         super().__init__()
         self.urls = urls
         self.output_path = output_path
         self.settings = settings
         self.is_running = True
-    
+
     def run(self):
         try:
             self.progress.emit(f"[{datetime.now().strftime('%H:%M:%S')}] Starting download...\n")
-            
-            # Create spotdl instance
-            spotdl = Spotdl(
-                client_id="",
-                client_secret="",
-                user_auth=False,
-                cache_path=os.path.join(self.output_path, ".spotdl"),
-                config=None,
-                output=os.path.join(self.output_path, self.settings['output_format'])
+
+            spotdl = get_spotdl(os.path.join(self.output_path, ".spotdl"))
+            spotdl.downloader.settings["output"] = os.path.join(
+                self.output_path, self.settings['output_format']
             )
-            
+            spotdl.downloader.progress_handler.update_callback = self._on_song_progress
+
             total_urls = len(self.urls)
             for idx, url in enumerate(self.urls):
                 if not self.is_running:
                     break
-                
+
                 try:
                     self.status_update.emit(f"Downloading ({idx + 1}/{total_urls}): {url}")
                     self.progress.emit(f"[{datetime.now().strftime('%H:%M:%S')}] Processing: {url}\n")
-                    
-                    # Download the URL
-                    songs = spotdl.download_song(url)
-                    if songs:
-                        self.progress.emit(f"✓ Successfully downloaded: {songs[0].name if isinstance(songs, list) else songs.name}\n")
-                    
-                    progress_pct = int((idx + 1) / total_urls * 100)
-                    self.progress_bar.emit(progress_pct)
-                    
+                    self.progress_bar.emit(0)
+
+                    songs = spotdl.search([url])
+                    results = spotdl.download_songs(songs)
+
+                    succeeded = sum(1 for _, path in results if path is not None)
+                    self.progress.emit(f"✓ Downloaded {succeeded}/{len(results)} song(s)\n")
+
                 except Exception as e:
                     self.progress.emit(f"✗ Error downloading {url}: {str(e)}\n")
-            
+
+                self.progress_bar.emit(int((idx + 1) / total_urls * 100))
+
             self.progress.emit(f"\n[{datetime.now().strftime('%H:%M:%S')}] Download complete!\n")
             self.status_update.emit("Ready")
             self.finished.emit(True)
-            
+
         except Exception as e:
             self.progress.emit(f"\n[{datetime.now().strftime('%H:%M:%S')}] ERROR: {str(e)}\n")
             self.status_update.emit("Error")
             self.finished.emit(False)
-    
+
+    def _on_song_progress(self, tracker, message):
+        """Called by spotdl (from this worker thread) as each song progresses"""
+        handler = tracker.parent
+        overall_pct = (
+            handler.overall_progress / handler.overall_total * 100
+            if handler.overall_total else 0
+        )
+        self.progress.emit(f"{tracker.song_name}: {message}\n")
+        self.progress_bar.emit(int(overall_pct))
+
     def stop(self):
         self.is_running = False
 
@@ -107,8 +134,8 @@ class SpotDLGUI(QMainWindow):
             'ffmpeg_path': 'auto'
         }
         
-        self.init_ui()
         self.load_settings()
+        self.init_ui()
         
     def init_ui(self):
         """Initialize the user interface"""
@@ -330,3 +357,89 @@ class SpotDLGUI(QMainWindow):
         self.download_worker.progress_bar.connect(self.update_progress)
         self.download_worker.finished.connect(self.on_download_finished)
         self.download_worker.status_update.connect(self.update_status)
+        self.download_worker.start()
+
+    def stop_download(self):
+        """Stop the current download"""
+        if self.download_worker:
+            self.download_worker.stop()
+        self.download_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.url_input.setEnabled(True)
+        self.update_log("[STOPPED] Download cancelled\n")
+
+    def update_log(self, text):
+        """Append text to the activity log"""
+        self.log_output.insertPlainText(text)
+        self.log_output.verticalScrollBar().setValue(
+            self.log_output.verticalScrollBar().maximum()
+        )
+
+    def update_progress(self, value):
+        """Update the progress bar"""
+        self.progress_bar.setValue(value)
+
+    def update_status(self, text):
+        """Update the status label and status bar"""
+        self.status_label.setText(text)
+        self.statusBar().showMessage(text)
+
+    def on_download_finished(self, success):
+        """Re-enable controls once a download run finishes"""
+        self.download_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.url_input.setEnabled(True)
+
+        if success:
+            QMessageBox.information(self, "Success", "Download completed!")
+
+    def open_output_folder(self):
+        """Open the output folder in the system file manager"""
+        if os.path.exists(self.output_path):
+            QG.QDesktopServices.openUrl(QC.QUrl.fromLocalFile(self.output_path))
+
+    def save_settings(self):
+        """Save settings to disk"""
+        self.settings['output_format'] = self.format_input.text()
+        self.settings['skip_existing'] = self.skip_checkbox.isChecked()
+
+        settings_path = Path.home() / ".spotdl_gui" / "settings.json"
+        settings_path.parent.mkdir(exist_ok=True)
+
+        with open(settings_path, 'w') as f:
+            json.dump(self.settings, f, indent=2)
+
+        QMessageBox.information(self, "Success", "Settings saved!")
+
+    def reset_settings(self):
+        """Reset settings to their defaults"""
+        self.settings = {
+            'output_format': '{artist} - {title}.mp3',
+            'skip_existing': True,
+            'ffmpeg_path': 'auto'
+        }
+        self.format_input.setText(self.settings['output_format'])
+        self.skip_checkbox.setChecked(self.settings['skip_existing'])
+        self.save_settings()
+
+    def load_settings(self):
+        """Load settings from disk"""
+        settings_path = Path.home() / ".spotdl_gui" / "settings.json"
+        if settings_path.exists():
+            try:
+                with open(settings_path, 'r') as f:
+                    loaded = json.load(f)
+                    self.settings.update(loaded)
+            except Exception:
+                pass
+
+
+def main():
+    app = QApplication(sys.argv)
+    window = SpotDLGUI()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+    main()
