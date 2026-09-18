@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 try:
     from spotdl import Spotdl
     from spotdl.types.song import Song
+    from spotdl.utils.ffmpeg import is_ffmpeg_installed, download_ffmpeg
 except ImportError:
     print("Error: spotdl not installed. Install with: pip install spotdl yt-dlp")
     sys.exit(1)
@@ -66,6 +67,13 @@ class DownloadWorker(QThread):
     def run(self):
         try:
             self.progress.emit(f"[{datetime.now().strftime('%H:%M:%S')}] Starting download...\n")
+
+            # spotdl's Spotdl/Downloader classes (unlike its CLI) don't auto-fetch
+            # ffmpeg, so a machine without it on PATH would otherwise hard-fail here.
+            if not is_ffmpeg_installed():
+                self.progress.emit("ffmpeg not found, downloading a copy (one-time)...\n")
+                download_ffmpeg()
+                self.progress.emit("ffmpeg downloaded.\n")
 
             spotdl = get_spotdl(os.path.join(self.output_path, ".spotdl"))
             spotdl.downloader.settings["output"] = os.path.join(
