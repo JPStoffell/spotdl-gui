@@ -35,6 +35,7 @@ jobs:
             --onefile `
             --windowed `
             --add-data "README.txt:." `
+            --collect-data=pykakasi `
             spotdl_gui_main.py
       
       - name: Create portable package
