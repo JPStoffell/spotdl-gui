@@ -5,6 +5,7 @@ A beautiful desktop application for downloading Spotify playlists
 
 import sys
 import os
+import re
 import json
 import threading
 from pathlib import Path
@@ -21,6 +22,23 @@ except ImportError:
     sys.exit(1)
 
 
+# spotdl (with --simple-tui) logs "<song>: <stage>" as each song moves through
+# these stages, in order, followed immediately by "<done>/<total> complete".
+# "Done" is intentionally excluded: it's immediately followed by the "complete"
+# line, which is the authoritative progress signal (it accounts for playlist
+# size, which isn't known until the first song finishes).
+STAGE_ORDER = [
+    "Searching for song",
+    "Getting audio meta",
+    "Downloading",
+    "Converting",
+    "Embedding metadata",
+]
+_COMPLETE_RE = re.compile(r'^(\d+)/(\d+) complete$')
+_STAGE_RE = re.compile(r'^.+: (.+)$')
+_DOWNLOAD_TIMEOUT = 600
+
+
 class DownloadThread(threading.Thread):
     """Worker thread for downloads"""
 
@@ -34,6 +52,7 @@ class DownloadThread(threading.Thread):
 
     def run(self):
         import subprocess
+        import time
 
         try:
             if not os.path.exists(self.output_path):
@@ -47,15 +66,53 @@ class DownloadThread(threading.Thread):
 
                 self.callback("status", f"Downloading: {url[:50]}...")
                 self.callback("log", f"[{datetime.now().strftime('%H:%M:%S')}] Downloading: {url}\n")
+                self.callback("progress", 0)
 
                 try:
-                    cmd = ['spotdl', 'download', url, '--output', self.output_path]
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                    cmd = ['spotdl', 'download', url, '--output', self.output_path, '--simple-tui']
+                    process = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, bufsize=1
+                    )
 
-                    if result.returncode == 0:
+                    start_time = time.monotonic()
+                    total_songs = None
+
+                    for line in process.stdout:
+                        if not self.is_running:
+                            process.terminate()
+                            break
+
+                        if time.monotonic() - start_time > _DOWNLOAD_TIMEOUT:
+                            process.terminate()
+                            self.callback("log", "✗ Error: download timed out\n")
+                            break
+
+                        line = line.rstrip("\n")
+                        if not line:
+                            continue
+                        self.callback("log", line + "\n")
+
+                        complete_match = _COMPLETE_RE.match(line)
+                        if complete_match:
+                            completed, total_songs = int(complete_match.group(1)), int(complete_match.group(2))
+                            self.callback("progress", completed / total_songs * 100)
+                            continue
+
+                        # Once a playlist's song count is known, per-song stage
+                        # progress would regress the overall bar, so ignore it.
+                        if total_songs is None or total_songs <= 1:
+                            stage_match = _STAGE_RE.match(line)
+                            if stage_match and stage_match.group(1) in STAGE_ORDER:
+                                stage_pct = (STAGE_ORDER.index(stage_match.group(1)) + 1) / len(STAGE_ORDER) * 100
+                                self.callback("progress", stage_pct)
+
+                    returncode = process.wait(timeout=30)
+
+                    if returncode == 0:
                         self.callback("log", f"✓ Downloaded successfully!\n")
                     else:
-                        self.callback("log", f"✗ Error: {result.stderr}\n")
+                        self.callback("log", f"✗ Error: spotdl exited with code {returncode}\n")
 
                     self.callback("progress", 100)
 
