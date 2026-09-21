@@ -216,7 +216,11 @@ class SpotDLGUI(Gtk.ApplicationWindow):
         browse_btn = Gtk.Button(label="Browse...")
         browse_btn.connect("clicked", self.on_browse)
         folder_box.append(browse_btn)
-        
+
+        new_folder_btn = Gtk.Button(label="New Folder...")
+        new_folder_btn.connect("clicked", self.on_new_folder)
+        folder_box.append(new_folder_btn)
+
         box.append(folder_box)
         
         # Progress
@@ -337,7 +341,67 @@ class SpotDLGUI(Gtk.ApplicationWindow):
         
         dialog.connect("response", on_response)
         dialog.present()
-    
+
+    def on_new_folder(self, widget):
+        """Create a new subfolder inside the current output location"""
+        dialog = Gtk.Dialog(title="New Folder", modal=True)
+        dialog.set_transient_for(self)
+        dialog.add_buttons(
+            "_Cancel", Gtk.ResponseType.CANCEL,
+            "_Create", Gtk.ResponseType.OK
+        )
+        dialog.set_default_response(Gtk.ResponseType.OK)
+
+        content = dialog.get_content_area()
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        content.set_margin_start(12)
+        content.set_margin_end(12)
+        content.set_spacing(6)
+
+        label = Gtk.Label(label=f"Create new folder in:\n{self.output_path}")
+        label.set_halign(Gtk.Align.START)
+        label.set_wrap(True)
+        content.append(label)
+
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("Folder name")
+        entry.set_activates_default(True)
+        content.append(entry)
+
+        def on_response(dialog, response_id):
+            if response_id != Gtk.ResponseType.OK:
+                dialog.destroy()
+                return
+
+            name = entry.get_text().strip()
+            dialog.destroy()
+
+            if not name:
+                return
+
+            if os.sep in name or (os.altsep and os.altsep in name):
+                self.show_message_dialog(
+                    Gtk.MessageType.WARNING, "Invalid Name",
+                    "Folder name can't contain a path separator"
+                )
+                return
+
+            new_path = os.path.join(self.output_path, name)
+            try:
+                os.makedirs(new_path, exist_ok=True)
+            except OSError as e:
+                self.show_message_dialog(
+                    Gtk.MessageType.WARNING, "Couldn't Create Folder", str(e)
+                )
+                return
+
+            self.output_path = new_path
+            self.folder_label.set_label(self.output_path)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
     def show_message_dialog(self, message_type, text, secondary_text):
         """Show a non-blocking message dialog (GTK4 removed Dialog.run() and format_secondary_text())"""
         dialog = Gtk.MessageDialog(
