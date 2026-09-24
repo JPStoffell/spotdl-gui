@@ -1,0 +1,13 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=SpotDL UI
+GenericName=Spotify Downloader
+Comment=Download tracks, albums and playlists with spotdl
+Exec=__EXEC__ %U
+Icon=io.github.spotdl_ui
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=spotify;music;download;spotdl;mp3;
+StartupNotify=true
+StartupWMClass=io.github.spotdl_ui

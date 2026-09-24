@@ -12,5 +12,4 @@ venv/
 *.swp
 .DS_Store
 Thumbs.db
-.spotdl_gui/
 .env

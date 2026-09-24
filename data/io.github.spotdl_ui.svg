@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3fe07f"/>
+      <stop offset="1" stop-color="#149c4a"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+
+  <g fill="#ffffff">
+    <!-- note stem -->
+    <rect x="66" y="26" width="9" height="50" rx="4.5"/>
+    <!-- note flag -->
+    <path d="M75 26 C 94 31, 95 46, 86 52 C 89 42, 83 34, 75 38 Z"/>
+    <!-- note head -->
+    <ellipse cx="56" cy="82" rx="17" ry="12" transform="rotate(-18 56 82)"/>
+  </g>
+</svg>

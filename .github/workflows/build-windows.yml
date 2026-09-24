@@ -1,53 +1,61 @@
-name: Build Windows Executable
+name: Build Windows executable
 
 on:
   push:
-    branches: [ main ]
-  release:
-    types: [created]
+    branches: [main]
+    paths:
+      - "spotdl_ui/**"
+      - "windows_main.py"
+      - "requirements.txt"
+      - ".github/workflows/build-windows.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "spotdl_ui/**"
+      - "windows_main.py"
+      - "requirements.txt"
+      - ".github/workflows/build-windows.yml"
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    
-    strategy:
-      matrix:
-        python-version: ['3.11']
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
+          python-version: "3.11"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
+          pip install pyinstaller
+
       - name: Build executable
         run: |
           pyinstaller `
-            --name=SpotDL `
+            --name SpotDL-UI `
             --onefile `
             --windowed `
-            --add-data "README.txt:." `
-            --collect-data=pykakasi `
-            --collect-data=ytmusicapi `
-            spotdl_gui_main.py
-      
-      - name: Create portable package
+            --collect-data pykakasi `
+            --collect-data ytmusicapi `
+            --collect-data spotdl `
+            --hidden-import spotipy `
+            windows_main.py
+
+      - name: Stage portable package
         run: |
-          mkdir dist/SpotDL_Portable
-          copy dist/SpotDL.exe dist/SpotDL_Portable/
-          if (Test-Path README.txt) { copy README.txt dist/SpotDL_Portable/ }
-      
+          New-Item -ItemType Directory -Path dist/SpotDL-UI-Windows -Force
+          Copy-Item dist/SpotDL-UI.exe dist/SpotDL-UI-Windows/
+          Copy-Item README.md dist/SpotDL-UI-Windows/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpotDL-Windows-Portable
-          path: dist/SpotDL_Portable/
+          name: SpotDL-UI-Windows
+          path: dist/SpotDL-UI-Windows/
           retention-days: 90

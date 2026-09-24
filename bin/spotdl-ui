@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Launcher for SpotDL UI.
+
+Kept as a plain script (rather than an installed package) so the app can be
+run straight out of this project directory, and so the .desktop launcher can
+point at one stable, absolute path.
+"""
+
+import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from spotdl_ui.app import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())
